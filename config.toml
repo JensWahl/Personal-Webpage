@@ -16,8 +16,8 @@ ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
     name = "GitHub"
     url = "https://github.com/JensWahl"
 [[menu.main]]
-    name = "Twitter"
-    url = "https://twitter.com/rstudio"
+    name = "NR"
+    url = "https://nr.no"
 
 [params]
     description = "A website built through Hugo and blogdown."
@@ -32,7 +32,7 @@ ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
     MathJaxVersion = "2.7.5"
 
     [params.logo]
-    url = "logo.png"
+    url = "Jens_Christian_Wahl_kvadrat.jpg"
     width = 50
     height = 50
     alt = "Logo"
