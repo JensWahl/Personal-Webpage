@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="generator" content="Hugo 0.51" />
+
+
+<title>Stochastic Volatility Applied to Bitcoin - A Hugo website</title>
+<meta property="og:title" content="Stochastic Volatility Applied to Bitcoin - A Hugo website">
+
+
+
+  
+
+
+
+
+
+
+
+
+<link href='//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/github.min.css' rel='stylesheet' type='text/css' />
+
+
+
+<link rel="stylesheet" href="/css/fonts.css" media="all">
+<link rel="stylesheet" href="/css/main.css" media="all">
+
+
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header class="header">
+        <nav class="nav">
+  <a href="/" class="nav-logo">
+    <img src="/images/Jens_Christian_Wahl_kvadrat.jpg"
+         width="50"
+         height="50"
+         alt="Logo">
+  </a>
+
+  <ul class="nav-links">
+    
+    <li><a href="/about/">About</a></li>
+    
+    <li><a href="https://github.com/JensWahl">GitHub</a></li>
+    
+    <li><a href="https://nr.no">NR</a></li>
+    
+  </ul>
+</nav>
+
+      </header>
+
+
+<main class="content" role="main">
+
+  <article class="article">
+    
+    <span class="article-duration">6 min read</span>
+    
+
+    <h1 class="article-title">Stochastic Volatility Applied to Bitcoin</h1>
+
+    
+    <span class="article-date">2018/11/11</span>
+    
+
+    <div class="article-content">
+      
+
+
+<p>Time varying volatility (variance), is one of the characteristics of financial time series. Another characteristic is that it is autocorrelated in time. This leads to what is known as <em>volatility clustring</em>, meaning that if we observe a big change in returns today, there is a higher probability of observing a big change tomorrow, and vise versa for small changes.</p>
+<p>In this post we will look at one specific model for estimating time varying volatility, namely the <em>stochastic volatility</em> model. This model is a nonlinear state-space model, where we model the time varying volatility as a latent (unobserved) process. For fun, we will apply the model to one most volatile exchange rates, namely Bitcoin.</p>
+Let <span class="math inline">\(x_t\)</span> denote the price at time <span class="math inline">\(t\)</span>. We are interested in the logarithmic returns, so our time series of interest will be <span class="math inline">\(y_t\)</span> = <span class="math inline">\(\log x_t - \log x_{t-1}\)</span>. The stochastic volatility model is defined as follows:
+<span class="math display">\[\begin{equation}
+    \begin{aligned}
+        y_t &amp;= \sigma_y e^{h_t/2} \epsilon_t, \quad t = 1, \dots, T, \\
+        h_{t+1} &amp;= \phi h_{t} + \sigma \eta_t, \quad t = 1, \dots, T-1,
+    \end{aligned}
+\end{equation}\]</span>
+<p>where <span class="math inline">\(h_t\)</span> is the logarithm of the variance on day <span class="math inline">\(t\)</span> and <span class="math inline">\(\epsilon_t, \eta_t \stackrel{\text{iid}}{\sim} \mathcal{N}(0,1)\)</span>. We also assume <span class="math inline">\(|\phi| &lt; 1\)</span> to ensure stationarity of <span class="math inline">\(h_t\)</span>. As we see, <span class="math inline">\(y_t\)</span> is dependent on two sources of randomness: iid shocks <span class="math inline">\(\epsilon_t\)</span>, and <span class="math inline">\(h_t\)</span>, which is a function of yesterdays value plus some independent shock <span class="math inline">\(\eta_t\)</span>. How much influence <span class="math inline">\(h_{t-1}\)</span> will have on <span class="math inline">\(h_t\)</span> is dependent one so called persisted parameter <span class="math inline">\(\phi\)</span>. In the financial literature, this is usually close to one, meaning the autocorrelation is high.</p>
+<div id="parameter-estimation" class="section level2">
+<h2>Parameter Estimation</h2>
+Even if this model look innocent, estimating the parameters is not trivial. This is a consequence of the fact that the likelihood is a high dimensional integral over the latent variables (one for each observation):
+<span class="math display">\[\begin{equation}
+  \mathcal{L}(\theta) = \int_{\mathbb{R}^T} f(y,h)dh,
+\end{equation}\]</span>
+<p>where <span class="math inline">\(\theta = (\sigma_y, \sigma, \phi), y = (y_1, \ldots ,y_T)\)</span> and <span class="math inline">\(h = (h_1, \ldots, h_T)\)</span>. This integral does not have an analytic solution, and we must therefore approximate it. This is usually done my Bayesian MCMC methods, where <span class="math inline">\(h\)</span> is treated as parameters and sampled together with <span class="math inline">\(\theta\)</span>. We will instead take a likelihood approach and approximate the integral with the <a href="https://en.wikipedia.org/wiki/Laplace%27s_method">Laplace approximation</a>. I will not go into detail here, but the idea is to approximate the joint likelihood with a multivariate normal distribution that has expectation at the mode of <span class="math inline">\(f\)</span> and covariance equal to the inverse Hessian at the mode.</p>
+<p>To to this, I will use the excellent R package <a href="https://github.com/kaskr/adcomp"><strong>TMB</strong></a> (<a href="https://arxiv.org/pdf/1509.00660.pdf">paper</a>). This package is made for fitting latent variable models. The workflow for using TMB is:</p>
+<ol style="list-style-type: decimal">
+<li>Write a C++ model template for the joint likelihood.</li>
+<li>Import the likelihood object into R.</li>
+<li>Make an objective function with <code>TMB::MakeADfun</code>.</li>
+<li>Optimize the objective function with <code>nlminb</code>.</li>
+</ol>
+The joint likelihood of our model is:
+<span class="math display">\[\begin{align}\label{eq:Likelihood}
+  f(y,h) &amp;= f(y|h)f(h) = \prod_{i=1}^T f(y_i|h_i)f(h_i)  = \prod_{i=1}^T f(y_i|h_i) \prod_{j=2}^T f(h_j|h_{j-1}) f(h_1) \\
+  &amp;= \prod_{i=1}^T \mathcal{N}(0,e^{h_i} \sigma_y^2) \prod_{j=2}^T \mathcal{N}(\phi h_{j-1}, \sigma^2) \mathcal{N}(0,\sigma^2/(1 - \phi^2))
+\end{align}\]</span>
+</div>
+<div id="write-a-c-model-template" class="section level2">
+<h2>Write a C++ model template</h2>
+<p><details> <summary> C++ code</summary></p>
+<p>We start by loading the TMB library and defining a helper function <span class="math inline">\(f\)</span>, that transform a variable from <span class="math inline">\({\mathbb{R}}\)</span> to <span class="math inline">\([0,1]\)</span>. This is done so that we can estimate <span class="math inline">\(\tilde{\phi}\)</span> unconstrained, and then find <span class="math inline">\(\phi = f(\tilde{\phi})\)</span>.</p>
+<pre class="cpp"><code>#include&lt;TMB.hpp&gt;
+
+// Helper function for phi
+// Transform x from the real line to [-1,1]
+template&lt;class Type&gt;
+Type f(Type x){
+  Type y = (exp(x) -Type(1))/(Type(1) + exp(x));
+  return(y);
+}</code></pre>
+<p>We next create our objective function and import our data and parameters. Note that we estimate the standard deviation on log scale. Due to the invariance property of the maximum likelihood estimate, we can estimate the logarithm of the standard deviation and then take the exponential transformation,ensuring that the estimate is greater than zero. The <code>ADREPORT</code> tells TMB that we want to report the standard error of the transformed parameters.</p>
+<pre class="cpp"><code>template&lt;class Type&gt; 
+Type objective_function&lt;Type&gt;::operator()(){
+  // Data
+  DATA_VECTOR(y);
+  DATA_INTEGER(n); 
+  
+  // Parameters
+  PARAMETER(log_sigma_y); 
+  PARAMETER(log_sigma);
+  PARAMETER(phi_logit); 
+  PARAMETER_VECTOR(h); // Latent process 
+  
+  // Transform parameters
+  Type sigma_y = exp(log_sigma_y);
+  Type sigma = exp(log_sigma); 
+  Type phi = f(phi_logit); 
+  
+  ADREPORT(sigma_y); 
+  ADREPORT(sigma); 
+  ADREPORT(phi); </code></pre>
+<p>Next we make our likelihood. Since we implement the negative log likelihood, the products in the likelihood we be replaced with sums.</p>
+<pre class="cpp"><code>// Negative log likelihood
+Type nll = 0; 
+  
+// Contribution from latent process
+
+// Assume stationary distribution
+nll -= dnorm(h(0), Type(0), sigma/sqrt(1 - phi*phi), true); 
+
+for(int i = 1; i &lt; n; i++){
+  nll -= dnorm(h(i), phi*h(i-1), sigma, true); 
+}
+
+// Contribution from observations
+for(int i = 0; i &lt; n; i++){
+  nll -= dnorm(y(i), Type(0), exp(h(i)/2)*sigma_y, true);
+}
+
+// Add estimate for conditional variance 
+vector&lt;Type&gt; cond_var = exp(h)*sigma_y*sigma_y; 
+ADREPORT(cond_var);
+
+return nll; 
+}</code></pre>
+</div>
+<div id="import-the-likelihood-object-into-r" class="section level2">
+<h2>Import the likelihood object into R</h2>
+<p>We start with compiling our C++ template and loading our data. I downloaded 5 years of data from this <a href="https://www.coindesk.com/price/">cite</a>.</p>
+<pre class="r"><code>library(TMB)
+library(tidyverse)
+compile(&quot;sv.cpp&quot;)
+dyn.load(dynlib(&quot;sv&quot;))
+bc &lt;- read_csv(&quot;BC10112013_10112018_coindesk.csv&quot;)</code></pre>
+<p>Lets look at the data:</p>
+<pre class="r"><code>bc</code></pre>
+<pre><code>## # A tibble: 1,829 x 2
+##    Date                `Close Price`
+##    &lt;dttm&gt;                      &lt;dbl&gt;
+##  1 2013-11-10 00:00:00          312.
+##  2 2013-11-11 00:00:00          333.
+##  3 2013-11-12 00:00:00          349.
+##  4 2013-11-13 00:00:00          393.
+##  5 2013-11-14 00:00:00          411.
+##  6 2013-11-15 00:00:00          409.
+##  7 2013-11-16 00:00:00          429.
+##  8 2013-11-17 00:00:00          476.
+##  9 2013-11-18 00:00:00          674.
+## 10 2013-11-19 00:00:00          542.
+## # ... with 1,819 more rows</code></pre>
+<p>We are in interested in the log returns of the data, so lets make a helper function for that and transform our data:</p>
+<pre class="r"><code>log_returns &lt;- function(price) {
+  log_returns &lt;- 100*(log(price) - log(lag(price)))
+  return(log_returns)
+}
+
+#rename variables and remove na
+bc &lt;- bc %&gt;% 
+  rename(date = Date, 
+         price = `Close Price`) %&gt;% 
+  mutate(date = as.Date(date),
+         log_ret = log_returns(price)) %&gt;% 
+  filter(!is.na(log_ret), !is.na(date))</code></pre>
+<p>Plot the data:</p>
+<pre class="r"><code>p1 &lt;- bc %&gt;% ggplot() + geom_line(aes(date,price)) + ylab(&quot;Price&quot;)
+p2 &lt;- bc %&gt;% ggplot() + geom_line(aes(date, log_ret)) + ylab(&quot;Log returns&quot;)
+gridExtra::grid.arrange(p1,p2, nrow = 2)</code></pre>
+<p><img src="/post/2018-11-11-stochastic-volatility-applied-to-bitcoin_files/figure-html/unnamed-chunk-4-1.png" width="672" /> We can clearly see that the volatility is not constant over time and we can see clusters of high volatility, for example in 2014 and 2015. Lets estimate the parameters in our stochastic volatility model.</p>
+<pre class="r"><code>#Prep for MakeADFun
+dat &lt;- list(y = bc$log_ret,
+            n = length(bc$log_ret))
+
+param &lt;- list(log_sigma_y = -1,
+              log_sigma = -1,
+              phi_logit = 3,
+              h = rep(0,length(bc$log_ret)))
+
+#Make objective function
+obj &lt;- MakeADFun(data = dat, parameters = param, random = &quot;h&quot;, DLL = &quot;sv&quot;, silent = TRUE)
+
+#Optimize objetive
+system.time(opt &lt;- nlminb(obj$par, obj$fn, obj$gr))</code></pre>
+<pre><code>##    user  system elapsed 
+##   1.294   0.062   1.790</code></pre>
+<pre class="r"><code>#Calculate standard error
+rep &lt;- sdreport(obj)
+srep &lt;- summary(rep)</code></pre>
+<p>Lets extract the estimate of our parameters, the latent process <span class="math inline">\(\hat{h}\)</span> and the conditional variance <span class="math inline">\(e^{\hat{h}}\hat{\sigma}_y^2\)</span>.</p>
+<pre class="r"><code>opt_param &lt;- srep[rownames(srep) %in% c(&quot;sigma_y&quot;, &quot;sigma&quot;, &quot;phi&quot;), ]
+opt_param</code></pre>
+<pre><code>##          Estimate Std. Error
+## sigma_y 2.7598524 0.24282922
+## sigma   0.5206256 0.05041711
+## phi     0.9291412 0.01496424</code></pre>
+<pre class="r"><code>opt_h &lt;- srep[rownames(srep) == &quot;h&quot;, ]
+
+#Plot latent process with standard error 
+opt_h &lt;- as.tibble(opt_h) %&gt;% 
+  rename(h = Estimate,
+         sd = `Std. Error`)
+
+latent_est &lt;- opt_h %&gt;% 
+  mutate(h_high = h + 2*sd,
+         h_low = h - 2*sd,
+         date = bc$date,
+         sd_obs = exp(h/2),
+         cond_var = srep[rownames(srep) == &quot;cond_var&quot;, 1],
+         cond_var_high = cond_var + 2*srep[rownames(srep) == &quot;cond_var&quot;, 2],
+         cond_var_low = cond_var - 2*srep[rownames(srep) == &quot;cond_var&quot;, 2])
+
+latent_est %&gt;% ggplot() + geom_line(aes(date,h), color = &quot;black&quot;) + 
+  geom_line(aes(date, h_high), color = &quot;red&quot;) + 
+  geom_line(aes(date, h_low), col = &quot;red&quot;) + 
+  geom_ribbon(aes(x = date, ymax = h_high, ymin = h_low), fill = &quot;red&quot;, alpha = 0.1) + 
+  ylab(&quot;Log Variance&quot;)</code></pre>
+<p><img src="/post/2018-11-11-stochastic-volatility-applied-to-bitcoin_files/figure-html/unnamed-chunk-6-1.png" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>latent_est %&gt;% ggplot() + geom_line(aes(date, cond_var)) + 
+  geom_line(aes(date, cond_var_high), color = &quot;red&quot;) + 
+  geom_line(aes(date, cond_var_low), col = &quot;red&quot;) + 
+  geom_ribbon(aes(x = date, ymax = cond_var_high, ymin = cond_var_low), fill = &quot;red&quot;, alpha = 0.2) + 
+  ylab(&quot;Conditional variance&quot;)</code></pre>
+<p><img src="/post/2018-11-11-stochastic-volatility-applied-to-bitcoin_files/figure-html/unnamed-chunk-6-2.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+
+    </div>
+  </article>
+
+  
+
+
+</main>
+
+      <footer class="footer">
+        <ul class="footer-links">
+          <li>
+            <a href="/index.xml" type="application/rss+xml" target="_blank">RSS feed</a>
+          </li>
+          <li>
+            <a href="https://gohugo.io/" class="footer-links-kudos">Made with <img src="/images/hugo-logo.png" alt="Img link to Hugo website" width="22" height="22"></a>
+          </li>
+        </ul>
+      </footer>
+
+    </div>
+    
+
+
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+
+
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/r.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/yaml.min.js"></script>
+<script>hljs.configure({languages: []}); hljs.initHighlightingOnLoad();</script>
+
+
+
+    
+<script src="/js/math-code.js"></script>
+<script async src="//cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+
+
+    
+  </body>
+</html>
+

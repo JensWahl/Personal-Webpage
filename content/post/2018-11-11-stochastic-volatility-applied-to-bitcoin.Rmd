@@ -1,0 +1,230 @@
+---
+title: Stochastic Volatility Applied to Bitcoin
+author: Jens Wahl
+date: '2018-11-11'
+slug: stochastic-volatility-applied-to-bitcoin
+categories:
+  - R
+tags:
+  - Finance
+  - State-Space models
+  - Maximum Likelihood
+---
+
+\newcommand\R{\mathbb{R}}
+\newcommand\N{\mathcal{N}}
+\newcommand{\var}{\mathrm{Var}}
+
+Time varying volatility (variance), is one of the characteristics of financial time series. Another characteristic is that it is autocorrelated in time. This leads to what is known as *volatility clustring*, meaning that if we observe a big change in returns today, there is a higher probability of observing a big change tomorrow, and vise versa for small changes. 
+
+In this post we will look at one specific model for estimating time varying volatility, namely the *stochastic volatility* model. This model is a nonlinear state-space model, where we model the time varying volatility as a latent (unobserved) process. For fun, we will apply the model to one most volatile exchange rates, namely Bitcoin. 
+
+Let $x_t$ denote the price at time $t$. We are interested in the logarithmic returns, so our time series of interest will be $y_t$ = $\log x_t - \log x_{t-1}$. The stochastic volatility model is defined as follows: 
+\begin{equation}
+    \begin{aligned}
+        y_t &= \sigma_y e^{h_t/2} \epsilon_t, \quad t = 1, \dots, T, \\
+        h_{t+1} &= \phi h_{t} + \sigma \eta_t, \quad t = 1, \dots, T-1,
+    \end{aligned}
+\end{equation}
+
+where $h_t$ is the logarithm of the variance on day $t$ and $\epsilon_t, \eta_t \stackrel{\text{iid}}{\sim} \mathcal{N}(0,1)$. We also assume $|\phi| < 1$ to ensure stationarity of $h_t$. As we see, $y_t$ is dependent on two sources of randomness: iid shocks $\epsilon_t$, and $h_t$, which is a function of yesterdays value plus some independent shock $\eta_t$. How much influence $h_{t-1}$ will have on $h_t$ is dependent one so called persisted parameter $\phi$. In the financial literature, this is usually close to one, meaning the autocorrelation is high.
+
+
+## Parameter Estimation
+Even if this model look innocent, estimating the parameters is not trivial. This is a consequence of the fact that the likelihood is a high dimensional integral over the latent variables (one for each observation): 
+\begin{equation}
+  \mathcal{L}(\theta) = \int_{\mathbb{R}^T} f(y,h)dh,
+\end{equation}
+where $\theta = (\sigma_y, \sigma, \phi), y = (y_1, \ldots ,y_T)$ and $h = (h_1, \ldots, h_T)$. This integral does not have an analytic solution, and we must therefore approximate it. This is usually done my Bayesian MCMC methods, where $h$ is treated as parameters and sampled together with $\theta$. We will instead take a likelihood approach and approximate the integral with the [Laplace approximation](https://en.wikipedia.org/wiki/Laplace%27s_method). I will not go into detail here, but the idea is to approximate the joint likelihood with a multivariate normal distribution that has expectation at the mode of $f$ and covariance equal to the inverse Hessian at the mode.
+
+[comment]: <> (![](/post/2018-11-11-stochastic-volatility-applied-to-bitcoin_files/Plot_laplace_approx.pdf)) 
+
+To to this, I will use the excellent R package [**TMB**](https://github.com/kaskr/adcomp) ([paper](https://arxiv.org/pdf/1509.00660.pdf)). This package is made for fitting latent variable models. The workflow for using TMB is: 
+
+1. Write a C++ model template for the joint likelihood. 
+2. Import the likelihood object into R.
+3. Make an objective function with `TMB::MakeADfun`.
+4. Optimize the objective function with `nlminb`.
+
+The joint likelihood of our model is: 
+\begin{align}\label{eq:Likelihood}
+  f(y,h) &= f(y|h)f(h) = \prod_{i=1}^T f(y_i|h_i)f(h_i)  = \prod_{i=1}^T f(y_i|h_i) \prod_{j=2}^T f(h_j|h_{j-1}) f(h_1) \\
+  &= \prod_{i=1}^T \mathcal{N}(0,e^{h_i} \sigma_y^2) \prod_{j=2}^T \mathcal{N}(\phi h_{j-1}, \sigma^2) \mathcal{N}(0,\sigma^2/(1 - \phi^2))
+\end{align}
+
+
+## Write a C++ model template
+
+<details> <summary> C++ code</summary>
+
+We start by loading the TMB library and defining a helper function $f$, that transform a variable from $\R$ to $[0,1]$. This is done so that we can estimate $\tilde{\phi}$ unconstrained, and then find $\phi = f(\tilde{\phi})$.
+```c++
+#include<TMB.hpp>
+
+// Helper function for phi
+// Transform x from the real line to [-1,1]
+template<class Type>
+Type f(Type x){
+  Type y = (exp(x) -Type(1))/(Type(1) + exp(x));
+  return(y);
+}
+```
+We next create our objective function and import our data and parameters. Note that we estimate the standard deviation on log scale. Due to the invariance property of the maximum likelihood estimate, we can estimate the logarithm of the standard deviation and then take the exponential transformation,ensuring that the estimate is greater than zero. The `ADREPORT` tells TMB that we want to report the standard error of the transformed parameters.
+
+```c++
+template<class Type> 
+Type objective_function<Type>::operator()(){
+  // Data
+  DATA_VECTOR(y);
+  DATA_INTEGER(n); 
+  
+  // Parameters
+  PARAMETER(log_sigma_y); 
+  PARAMETER(log_sigma);
+  PARAMETER(phi_logit); 
+  PARAMETER_VECTOR(h); // Latent process 
+  
+  // Transform parameters
+  Type sigma_y = exp(log_sigma_y);
+  Type sigma = exp(log_sigma); 
+  Type phi = f(phi_logit); 
+  
+  ADREPORT(sigma_y); 
+  ADREPORT(sigma); 
+  ADREPORT(phi); 
+```
+Next we make our likelihood. Since we implement the negative log likelihood, the products in the likelihood we be replaced with sums.
+```c++
+// Negative log likelihood
+Type nll = 0; 
+  
+// Contribution from latent process
+
+// Assume stationary distribution
+nll -= dnorm(h(0), Type(0), sigma/sqrt(1 - phi*phi), true); 
+
+for(int i = 1; i < n; i++){
+  nll -= dnorm(h(i), phi*h(i-1), sigma, true); 
+}
+
+// Contribution from observations
+for(int i = 0; i < n; i++){
+  nll -= dnorm(y(i), Type(0), exp(h(i)/2)*sigma_y, true);
+}
+
+// Add estimate for conditional variance 
+vector<Type> cond_var = exp(h)*sigma_y*sigma_y; 
+ADREPORT(cond_var);
+
+return nll; 
+}
+```
+
+## Import the likelihood object into R 
+
+We start with compiling our C++ template and loading our data. I downloaded 5 years of data from this [cite](https://www.coindesk.com/price/).  
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, cache=FALSE)
+library(tidyverse)
+library(TMB)
+bc <- read_csv("/Users/JensWahl/Desktop/stocvol_bc/BC10112013_10112018_coindesk.csv")
+compile("/Users/JensWahl/Desktop/stocvol_bc/sv.cpp")
+dyn.load(dynlib("/Users/JensWahl/Desktop/stocvol_bc/sv"))
+
+#set ggplot theme
+theme_set(theme_bw())
+```
+
+```{r, eval=FALSE}
+library(TMB)
+library(tidyverse)
+compile("sv.cpp")
+dyn.load(dynlib("sv"))
+bc <- read_csv("BC10112013_10112018_coindesk.csv")
+```
+Lets look at the data: 
+```{r}
+bc
+```
+We are in interested in the log returns of the data, so lets make a helper function for that and transform our data: 
+```{r}
+log_returns <- function(price) {
+  log_returns <- 100*(log(price) - log(lag(price)))
+  return(log_returns)
+}
+
+#rename variables and remove na
+bc <- bc %>% 
+  rename(date = Date, 
+         price = `Close Price`) %>% 
+  mutate(date = as.Date(date),
+         log_ret = log_returns(price)) %>% 
+  filter(!is.na(log_ret), !is.na(date))
+```
+
+Plot the data: 
+
+```{r}
+p1 <- bc %>% ggplot() + geom_line(aes(date,price)) + ylab("Price")
+p2 <- bc %>% ggplot() + geom_line(aes(date, log_ret)) + ylab("Log returns")
+gridExtra::grid.arrange(p1,p2, nrow = 2)
+```
+We can clearly see that the volatility is not constant over time and we can see clusters of high volatility, for example in 2014 and 2015. 
+Lets estimate the parameters in our stochastic volatility model.
+
+```{r}
+#Prep for MakeADFun
+dat <- list(y = bc$log_ret,
+            n = length(bc$log_ret))
+
+param <- list(log_sigma_y = -1,
+              log_sigma = -1,
+              phi_logit = 3,
+              h = rep(0,length(bc$log_ret)))
+
+#Make objective function
+obj <- MakeADFun(data = dat, parameters = param, random = "h", DLL = "sv", silent = TRUE)
+
+#Optimize objetive
+system.time(opt <- nlminb(obj$par, obj$fn, obj$gr))
+
+#Calculate standard error
+rep <- sdreport(obj)
+srep <- summary(rep)
+
+```
+Lets extract the estimate of our parameters, the latent process $\hat{h}$ and the conditional variance $e^{\hat{h}}\hat{\sigma}_y^2$. 
+```{r, fig.align="center"}
+opt_param <- srep[rownames(srep) %in% c("sigma_y", "sigma", "phi"), ]
+opt_param
+
+opt_h <- srep[rownames(srep) == "h", ]
+
+#Plot latent process with standard error 
+opt_h <- as.tibble(opt_h) %>% 
+  rename(h = Estimate,
+         sd = `Std. Error`)
+
+latent_est <- opt_h %>% 
+  mutate(h_high = h + 2*sd,
+         h_low = h - 2*sd,
+         date = bc$date,
+         sd_obs = exp(h/2),
+         cond_var = srep[rownames(srep) == "cond_var", 1],
+         cond_var_high = cond_var + 2*srep[rownames(srep) == "cond_var", 2],
+         cond_var_low = cond_var - 2*srep[rownames(srep) == "cond_var", 2])
+
+latent_est %>% ggplot() + geom_line(aes(date,h), color = "black") + 
+  geom_line(aes(date, h_high), color = "red") + 
+  geom_line(aes(date, h_low), col = "red") + 
+  geom_ribbon(aes(x = date, ymax = h_high, ymin = h_low), fill = "red", alpha = 0.1) + 
+  ylab("Log Variance")
+
+latent_est %>% ggplot() + geom_line(aes(date, cond_var)) + 
+  geom_line(aes(date, cond_var_high), color = "red") + 
+  geom_line(aes(date, cond_var_low), col = "red") + 
+  geom_ribbon(aes(x = date, ymax = cond_var_high, ymin = cond_var_low), fill = "red", alpha = 0.2) + 
+  ylab("Conditional variance")
+```
+
