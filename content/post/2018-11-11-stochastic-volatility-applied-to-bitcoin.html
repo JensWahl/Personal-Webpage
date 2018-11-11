@@ -159,7 +159,7 @@ obj &lt;- MakeADFun(data = dat, parameters = param, random = &quot;h&quot;, DLL 
 #Optimize objetive
 system.time(opt &lt;- nlminb(obj$par, obj$fn, obj$gr))</code></pre>
 <pre><code>##    user  system elapsed 
-##   1.354   0.066   1.584</code></pre>
+##   1.152   0.042   1.384</code></pre>
 <pre class="r"><code>#Calculate standard error
 rep &lt;- sdreport(obj)
 srep &lt;- summary(rep)</code></pre>
