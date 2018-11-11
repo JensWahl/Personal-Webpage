@@ -143,7 +143,7 @@ bc &lt;- bc %&gt;%
 <pre class="r"><code>p1 &lt;- bc %&gt;% ggplot() + geom_line(aes(date,price)) + ylab(&quot;Price&quot;)
 p2 &lt;- bc %&gt;% ggplot() + geom_line(aes(date, log_ret)) + ylab(&quot;Log returns&quot;)
 gridExtra::grid.arrange(p1,p2, nrow = 2)</code></pre>
-<p><img src="/post/2018-11-11-stochastic-volatility-applied-to-bitcoin_files/figure-html/unnamed-chunk-4-1.png" width="672" /> We can clearly see that the volatility is not constant over time and we can see clusters of high volatility, for example in 2014 and 2015. Lets estimate the parameters in our stochastic volatility model.</p>
+<p><img src="/post/2018-11-11-stochastic-volatility-applied-to-bitcoin_files/figure-html/unnamed-chunk-4-1.png" width="672" /> We can clearly see that the volatility is not constant over time and we can see clusters of high volatility, for example in 2014 and 2018. Lets estimate the parameters in our stochastic volatility model.</p>
 <pre class="r"><code>#Prep for MakeADFun
 dat &lt;- list(y = bc$log_ret,
             n = length(bc$log_ret))
@@ -159,7 +159,7 @@ obj &lt;- MakeADFun(data = dat, parameters = param, random = &quot;h&quot;, DLL 
 #Optimize objetive
 system.time(opt &lt;- nlminb(obj$par, obj$fn, obj$gr))</code></pre>
 <pre><code>##    user  system elapsed 
-##   1.294   0.062   1.790</code></pre>
+##   1.354   0.066   1.584</code></pre>
 <pre class="r"><code>#Calculate standard error
 rep &lt;- sdreport(obj)
 srep &lt;- summary(rep)</code></pre>

@@ -170,7 +170,7 @@ p1 <- bc %>% ggplot() + geom_line(aes(date,price)) + ylab("Price")
 p2 <- bc %>% ggplot() + geom_line(aes(date, log_ret)) + ylab("Log returns")
 gridExtra::grid.arrange(p1,p2, nrow = 2)
 ```
-We can clearly see that the volatility is not constant over time and we can see clusters of high volatility, for example in 2014 and 2015. 
+We can clearly see that the volatility is not constant over time and we can see clusters of high volatility, for example in 2014 and 2018. 
 Lets estimate the parameters in our stochastic volatility model.
 
 ```{r}
