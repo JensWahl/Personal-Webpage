@@ -6,10 +6,20 @@
     <description>Recent content in Posts on A Hugo website</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Fri, 30 Dec 2016 21:49:57 -0700</lastBuildDate>
+    <lastBuildDate>Sun, 11 Nov 2018 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="/post/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>Stochastic Volatility Applied to Bitcoin</title>
+      <link>/2018/11/11/stochastic-volatility-applied-to-bitcoin/</link>
+      <pubDate>Sun, 11 Nov 2018 00:00:00 +0000</pubDate>
+      
+      <guid>/2018/11/11/stochastic-volatility-applied-to-bitcoin/</guid>
+      <description>Time varying volatility (variance), is one of the characteristics of financial time series. Another characteristic is that it is autocorrelated in time. This leads to what is known as volatility clustring, meaning that if we observe a big change in returns today, there is a higher probability of observing a big change tomorrow, and vise versa for small changes.
+In this post we will look at one specific model for estimating time varying volatility, namely the stochastic volatility model.</description>
+    </item>
     
     <item>
       <title>A Plain Markdown Post</title>

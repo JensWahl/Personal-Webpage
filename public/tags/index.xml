@@ -6,10 +6,28 @@
     <description>Recent content in Tags on A Hugo website</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Thu, 23 Jul 2015 21:13:14 -0500</lastBuildDate>
+    <lastBuildDate>Sun, 11 Nov 2018 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="/tags/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>Finance</title>
+      <link>/tags/finance/</link>
+      <pubDate>Sun, 11 Nov 2018 00:00:00 +0000</pubDate>
+      
+      <guid>/tags/finance/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Maximum Likelihood</title>
+      <link>/tags/maximum-likelihood/</link>
+      <pubDate>Sun, 11 Nov 2018 00:00:00 +0000</pubDate>
+      
+      <guid>/tags/maximum-likelihood/</guid>
+      <description></description>
+    </item>
     
     <item>
       <title>Plot</title>
@@ -35,6 +53,15 @@
       <pubDate>Thu, 23 Jul 2015 21:13:14 -0500</pubDate>
       
       <guid>/tags/regression/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>State Space Models</title>
+      <link>/tags/state-space-models/</link>
+      <pubDate>Sun, 11 Nov 2018 00:00:00 +0000</pubDate>
+      
+      <guid>/tags/state-space-models/</guid>
       <description></description>
     </item>
     
